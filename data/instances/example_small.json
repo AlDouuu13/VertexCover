@@ -1,0 +1,6 @@
+{
+  "name": "example_small",
+  "description": "Mini-red de 6 routers usada como ejemplo manual en el Avance 1. Optimo conocido = 3 ({A,C,E}).",
+  "vertices": ["A", "B", "C", "D", "E", "F"],
+  "edges": [["A", "B"], ["A", "C"], ["A", "D"], ["B", "C"], ["D", "E"], ["E", "F"]]
+}
