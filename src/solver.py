@@ -24,6 +24,20 @@ class VertexCoverSolver:
     def __init__(self, graph: Graph):
         self.graph = graph
 
+    def _sorted_edges(self) -> list[tuple]:
+        """
+        Devuelve las aristas en un orden canonico y deterministico.
+
+        Python aleatoriza el hash de los strings entre procesos (PYTHONHASHSEED),
+        por lo que iterar directamente sobre un set() de aristas produce un
+        orden distinto en cada ejecucion. Como el proyecto exige resultados
+        reproducibles (instrucciones adicionales, punto 7), tanto el "arbitrario"
+        del matching maximal como el desempate del greedy se resuelven siempre
+        sobre esta misma lista ordenada.
+        """
+        canonical = (tuple(sorted((u, v), key=str)) for u, v in self.graph.edges)
+        return sorted(canonical, key=lambda e: tuple(map(str, e)))
+
     # ------------------------------------------------------------------
     # 1. Greedy por grado
     # ------------------------------------------------------------------
@@ -31,7 +45,9 @@ class VertexCoverSolver:
         """
         En cada paso elige el vertice con mayor numero de aristas incidentes
         entre las aun no cubiertas, lo agrega a la cobertura y elimina esas
-        aristas. Repite hasta no tener aristas pendientes.
+        aristas. Repite hasta no tener aristas pendientes. Los empates de
+        grado se resuelven por orden canonico (ver `_sorted_edges`), para
+        que el resultado sea reproducible.
 
         Complejidad: O(V * E) en esta implementacion directa (en cada
         iteracion se recorren las aristas restantes para recalcular grados).
@@ -40,7 +56,7 @@ class VertexCoverSolver:
         Garantia de aproximacion: ninguna cota fija en el peor caso general,
         pero buen desempeno empirico (ver experiments/compare.py).
         """
-        remaining_edges = set(self.graph.edges)
+        remaining_edges = self._sorted_edges()
         cover: set = set()
 
         while remaining_edges:
@@ -49,13 +65,17 @@ class VertexCoverSolver:
                 degree_count[u] = degree_count.get(u, 0) + 1
                 degree_count[v] = degree_count.get(v, 0) + 1
 
+            # max() devuelve el primer elemento de mayor valor segun el
+            # orden de iteracion del dict, que aqui es deterministico
+            # porque degree_count se construyo a partir de una lista ya
+            # ordenada canonicamente.
             best_vertex = max(degree_count, key=degree_count.get)
             cover.add(best_vertex)
 
-            remaining_edges = {
+            remaining_edges = [
                 (u, v) for (u, v) in remaining_edges
                 if u != best_vertex and v != best_vertex
-            }
+            ]
 
         return cover
 
@@ -73,20 +93,22 @@ class VertexCoverSolver:
         Garantia de aproximacion: |cover| <= 2 * |optimo|, porque las
         aristas elegidas forman un matching (no comparten extremos) y toda
         cobertura valida debe incluir al menos un vertice de cada arista
-        del matching.
+        del matching. La arista "arbitraria" en cada paso se toma siempre
+        la primera en el orden canonico (ver `_sorted_edges`), para que el
+        resultado sea reproducible entre ejecuciones.
         """
-        remaining_edges = set(self.graph.edges)
+        remaining_edges = self._sorted_edges()
         cover: set = set()
 
         while remaining_edges:
-            u, v = next(iter(remaining_edges))
+            u, v = remaining_edges[0]
             cover.add(u)
             cover.add(v)
 
-            remaining_edges = {
+            remaining_edges = [
                 (a, b) for (a, b) in remaining_edges
                 if a not in (u, v) and b not in (u, v)
-            }
+            ]
 
         return cover
 
