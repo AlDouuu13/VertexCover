@@ -110,10 +110,18 @@ class Graph:
         }
 
     def save_json(self, path: str | Path, name: str = "instance", description: str = "") -> None:
-        Path(path).write_text(
-            json.dumps(self.to_dict(name, description), indent=2, ensure_ascii=False),
-            encoding="utf-8",
+        data = self.to_dict(name, description)
+        vertices_json = json.dumps(data["vertices"], ensure_ascii=False)
+        edges_json = ",\n    ".join(json.dumps(e, ensure_ascii=False) for e in data["edges"])
+        text = (
+            "{\n"
+            f'  "name": {json.dumps(data["name"], ensure_ascii=False)},\n'
+            f'  "description": {json.dumps(data["description"], ensure_ascii=False)},\n'
+            f'  "vertices": {vertices_json},\n'
+            f'  "edges": [\n    {edges_json}\n  ]\n'
+            "}\n"
         )
+        Path(path).write_text(text, encoding="utf-8")
 
     # ---------- generadores de instancias sintéticas ----------
     @staticmethod
