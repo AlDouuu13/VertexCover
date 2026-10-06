@@ -78,12 +78,12 @@ python experiments/compare.py
 
 ## Integrantes
 
-| Nombre | Rol principal en esta fase |
-|---|---|
-| Integrante 1 | |
-| Integrante 2 | |
-| Integrante 3 | |
-| Integrante 4 | |
+| Nombre |
+|---|
+| Steffano Ricardo Caballero Zegarra | 
+| Adriel Alfredo Llactahuamani Ayala |
+| Lym Kurth Puma Sullcapuma          |
+| Diego Alonso Quispe Castilla       |
 
 ## Licencia / uso académico
 
