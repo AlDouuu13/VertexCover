@@ -82,7 +82,7 @@ python experiments/compare.py
 |---|
 | Steffano Ricardo Caballero Zegarra | 
 | Adriel Alfredo Llactahuamani Ayala |
-| Lym Kurth Puma Sullcapuma          |
+| Albert Erik Morocco Amanca         |
 | Diego Alonso Quispe Castilla       |
 
 ## Licencia / uso académico
