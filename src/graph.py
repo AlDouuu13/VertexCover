@@ -6,10 +6,12 @@ Vértices, usada para representar la topología de una red (routers = vértices,
 enlaces = aristas).
 
 Representación interna: lista de adyacencia (diccionario de conjuntos), elegida
-por simplicidad, porque permite:
+por simplicidad y eficiencia:
   - obtener el grado de un vértice en O(1)
   - iterar vecinos en O(deg(v))
   - insertar/eliminar aristas en O(1) amortizado
+  - soporte de grafos sintéticos (Erdos-Renyi, Barabasi-Albert) y datasets
+    reales de gran escala (SNAP Autonomous Systems / CAIDA Router Topology).
 
 Formato de archivo de instancia (JSON):
 {
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections import deque
 from pathlib import Path
 from typing import Iterable, Hashable
 
@@ -69,6 +72,23 @@ class Graph:
                     result.append((u, v))
         return set(result)
 
+    def canonical_edges(self) -> list[tuple]:
+        """
+        Devuelve la lista determinística de aristas ordenadas canónicamente.
+        Evita la sobrecarga de frozenset para grafos de escala real.
+        """
+        result = []
+        for u, neighbors in self._adj.items():
+            u_str = str(u)
+            for v in neighbors:
+                v_str = str(v)
+                if u_str < v_str:
+                    result.append((u, v))
+                elif u_str == v_str and u < v:
+                    result.append((u, v))
+        result.sort(key=lambda e: (str(e[0]), str(e[1])))
+        return result
+
     def neighbors(self, v: Hashable) -> set:
         return set(self._adj.get(v, set()))
 
@@ -79,7 +99,14 @@ class Graph:
         return len(self._adj)
 
     def num_edges(self) -> int:
-        return len(self.edges)
+        # Cálculo O(V) directo sin reservar conjuntos de tuplas
+        return sum(len(neigh) for neigh in self._adj.values()) // 2
+
+    def density(self) -> float:
+        n = self.num_vertices()
+        if n <= 1:
+            return 0.0
+        return (2.0 * self.num_edges()) / (n * (n - 1))
 
     def is_edge(self, u: Hashable, v: Hashable) -> bool:
         return v in self._adj.get(u, set())
@@ -88,6 +115,43 @@ class Graph:
         g = Graph()
         g._adj = {v: set(neigh) for v, neigh in self._adj.items()}
         return g
+
+    # ---------- subgrafos y vistas de escala ----------
+    def subgraph(self, subset: Iterable[Hashable]) -> "Graph":
+        """Genera el subgrafo inducido por el subconjunto de vértices."""
+        sub_set = set(subset)
+        sub_g = Graph(vertices=sub_set)
+        for u in sub_set:
+            if u in self._adj:
+                for v in self._adj[u]:
+                    if v in sub_set and str(u) < str(v):
+                        sub_g.add_edge(u, v)
+        return sub_g
+
+    def top_degree_subgraph(self, top_k: int = 100) -> "Graph":
+        """
+        Extrae el subgrafo inducido por los top_k vértices de mayor grado (hubs).
+        Fundamental para la visualización fluida de grafos masivos de internet.
+        """
+        if self.num_vertices() <= top_k:
+            return self.copy()
+        sorted_v = sorted(self._adj.keys(), key=lambda v: len(self._adj[v]), reverse=True)
+        return self.subgraph(sorted_v[:top_k])
+
+    def ego_subgraph(self, center: Hashable, radius: int = 1) -> "Graph":
+        """Extrae el vecindario BFS de radio k alrededor de un router central."""
+        if center not in self._adj:
+            return Graph()
+        visited = {center}
+        queue = deque([(center, 0)])
+        while queue:
+            node, dist = queue.popleft()
+            if dist < radius:
+                for neighbor in self._adj.get(node, set()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append((neighbor, dist + 1))
+        return self.subgraph(visited)
 
     def __repr__(self) -> str:
         return f"Graph(|V|={self.num_vertices()}, |E|={self.num_edges()})"
@@ -99,6 +163,35 @@ class Graph:
         g = cls(vertices=data.get("vertices", []))
         for u, v in data["edges"]:
             g.add_edge(u, v)
+        return g
+
+    @classmethod
+    def from_edge_list(
+        cls,
+        path: str | Path,
+        delimiter: str | None = None,
+        comment_char: str = "#",
+        max_edges: int | None = None,
+    ) -> "Graph":
+        """
+        Carga grafos en formato de lista de aristas (SNAP, Network Repository, etc.).
+        Ignora comentarios iniciales (#) y columnas adicionales de metadatos.
+        """
+        g = cls()
+        count = 0
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith(comment_char):
+                    continue
+                parts = line.split(delimiter) if delimiter else line.split()
+                if len(parts) >= 2:
+                    u, v = parts[0], parts[1]
+                    if u != v:
+                        g.add_edge(u, v)
+                        count += 1
+                        if max_edges and count >= max_edges:
+                            break
         return g
 
     def to_dict(self, name: str = "instance", description: str = "") -> dict:
