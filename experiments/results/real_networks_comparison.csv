@@ -1,0 +1,5 @@
+dataset,routers_V,enlaces_E,load_time_ms,greedy_ids,greedy_pct,greedy_time_ms,greedy_mem_kb,matching_ids,matching_pct,matching_time_ms,matching_mem_kb,ratio_matching_vs_greedy,ilp_optimo
+example_small,6,6,0.18,3,50.0,0.04,2.2,4,66.67,0.01,0.6,1.333,3
+network_backbone_18,18,32,0.63,7,38.89,0.1,6.9,14,77.78,0.17,3.6,2.0,7
+SNAP AS-733 Oregon,6474,12572,9.02,1055,16.3,23.9,2752.4,1904,29.41,17.15,1719.7,1.805,N/A (Gran Escala)
+SNAP CAIDA BGP Backbone,26475,53381,101.92,3695,13.96,164.86,11512.0,6948,26.24,103.91,7940.8,1.88,N/A (Gran Escala)
