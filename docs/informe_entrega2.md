@@ -1,6 +1,7 @@
-# Informe Técnico — Segunda Entrega
+# Informe Técnico — Segunda Entrega (Avances 4 y 5)
 ## Proyecto Semestral: Algoritmos Avanzados (2026-2)
 **Universidad Nacional de San Antonio Abad del Cusco (UNSAAC)**  
+**Facultad de Ingeniería Eléctrica, Electrónica, Informática y Mecánica**  
 **Escuela Profesional de Ingeniería Informática y de Sistemas**  
 **Docente:** Héctor Eduardo Ugarte Rojas  
 **Grupo 1 — Línea:** Cobertura de Vértices y Comparación de Estrategias de Aproximación  
@@ -15,64 +16,44 @@
 ---
 
 ## 1. Resumen Ejecutivo
-En esta **Segunda Entrega**, se presenta la implementación funcional, integración de sistemas, pruebas automatizadas, interfaz gráfica interactiva y evaluación experimental a escala real para el problema de **Cobertura de Vértices (Vertex Cover)** aplicado a la ubicación de **Sistemas de Detección de Intrusos (IDS)** en redes de comunicaciones:
-1. **Algoritmos Implementados:**
-   - **Greedy por Grado Optimizado:** Implementado con max-heap (`heapq`) y actualización perezosa de grados (*lazy updates*), reduciendo la complejidad temporal de $O(V \cdot E)$ a **$O((V+E)\log V)$**.
-   - **2-Aproximación por Emparejamiento Maximal (*Maximal Matching*):** Algoritmo determinístico lineal **$O(V+E)$** con garantía matemática demostrada de $|C| \le 2 \cdot |C^*|$.
-   - **Exacto por Fuerza Bruta:** Búsqueda combinatoria $O(2^V \cdot E)$ para validación en instancias pequeñas ($|V| \le 20$).
-   - **Exacto Escalable (ILP y Branch & Bound):** Formulación de Programación Lineal Entera resuelta mediante PuLP y complementada con un motor autónomo propio de *Branch & Bound* con poda analítica mediante cotas inferiores de emparejamiento maximal.
-2. **Soporte de Instancias Reales Masivas de Internet:**
-   - Adquisición e integración de topologías reales BGP de la colección científica **Stanford SNAP**:
-     * **SNAP AS-733 Oregon:** 6,474 routers y 12,572 enlaces físicos.
-     * **SNAP CAIDA BGP Core:** 26,475 routers y 53,381 enlaces físicos.
-   - Demostración empírica de que en la red de CAIDA, el algoritmo Greedy requiere solo **3,695 routers (13.96% de la red)** para monitorear el **100% de los enlaces globales**, logrando un ahorro del 86.04% en hardware IDS.
-3. **Interfaz Gráfica de Usuario (GUI):**
-   - Interfaz interactiva de escritorio desarrollada en Python con Tkinter/ttk (`gui.py` / `src/gui_app.py`).
-   - Soporte fluido para grafos masivos mediante **concurrencia multihilo asíncrona** y renderizado multinivel: modo *Backbone Hubs* (top routers principales), modo *Ego-Network* (vecindario local) y modo de métricas globales.
-   - Canvas interactivo con **Zoom continuo** (rueda del ratón) y **Pan** (arrastre con clic), inspector interactivo de routers al hacer clic, tarjetas KPI y exportación en JSON/CSV.
-4. **Verificación y Pruebas Automatizadas:**
-   - **38 pruebas automatizadas** con `pytest` pasando al 100% (unitarias, límite, adversarias, escala e integración).
-   - Instrumentación de tiempo de CPU ($\mu$s/ms) y memoria pico RAM (KB) con `tracemalloc`.
+El presente informe documenta el cumplimiento integral de los requerimientos para la **Segunda Entrega** del proyecto semestral de Algoritmos Avanzados, enfocado en la resolución, análisis y evaluación experimental del problema de Cobertura de Vértices (*Vertex Cover*) aplicado a la ubicación costo-eficiente de Sistemas de Detección de Intrusos (IDS) en redes de comunicaciones.
+
+En esta fase se consolidó la transición desde el prototipo preliminar de la Primera Entrega hacia un sistema computacional completamente funcional, optimizado y escalable a topologías reales masivas:
+1. **Heurística Greedy por Grado Optimizada:** Rediseñada mediante una cola de prioridad basada en montículos de máximos con actualización perezosa (*Lazy Max-Heap*), reduciendo la complejidad de $O(V \cdot E)$ a **$O((V+E)\log V)$** con desempate canónico determinístico.
+2. **2-Aproximación por Emparejamiento Maximal (*Maximal Matching*):** Implementada en una sola pasada lineal **$O(V+E)$** con garantía matemática formal demostrada de $|C| \le 2 \cdot |C^*|$.
+3. **Exacto Escalable (ILP y Branch & Bound):** Formulación de Programación Lineal Entera resuelta mediante PuLP y complementada con un motor autónomo propio de *Branch & Bound* con poda analítica mediante cotas inferiores de emparejamiento maximal (*Matching Lower Bound*), superando de forma definitiva la barrera de $n=20$ de la fuerza bruta.
+4. **Instancias Reales Masivas de Internet (Stanford SNAP):** Integración y procesamiento de dos datasets científicos de gran escala:
+   - **SNAP AS-733 Oregon:** 6,474 routers y 12,572 enlaces físicos BGP.
+   - **SNAP CAIDA BGP Core:** 26,475 routers y 53,381 enlaces físicos globales.
+   - En la red de CAIDA, el algoritmo Greedy requiere solo **3,695 routers (13.96% de la red)** para monitorear el **100% de los enlaces globales** en solo 164 ms, logrando un ahorro del **86.04%** en hardware IDS.
+5. **Interfaz Gráfica de Usuario (GUI):** Desarrollada en Python con Tkinter/ttk ([gui.py](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/gui.py)), con desacoplamiento multihilo asíncrono (`threading.Thread`) y visualización adaptativa multinivel (*Backbone Hubs* y *Ego-Networks*) para operar a 60 FPS con zoom y arrastre continuo sin bloqueos.
+6. **Verificación y Pruebas Automatizadas:** Suite completa de **38 pruebas automatizadas** bajo `pytest` pasando al 100%, con instrumentación de tiempo de CPU y memoria pico con `tracemalloc`.
 
 ---
 
-## 2. Formulación y Justificación del Problema en Redes
-Dado un grafo no dirigido $G = (V, E)$ que modela una red de comunicaciones:
-- $V$: Conjunto de routers o conmutadores troncales.
-- $E$: Enlaces físicos de transmisión de datos.
-- **Objetivo:** Encontrar el subconjunto $C \subseteq V$ de tamaño mínimo tal que cada enlace $(u, v) \in E$ tenga al menos un extremo en $C$ ($u \in C \lor v \in C$).
-- **Relevancia:** Instalar un IDS en un router permite inspeccionar todos los paquetes que entran o salen por sus interfaces. Al cubrir todas las aristas, ningún flujo de red entre dos routers puede transitar sin ser analizado por al menos un IDS.
+## 2. Matriz de Trazabilidad y Cumplimiento del PDF
+
+| Requisito del PDF (Pág. 3-6) | Tipo | Componente / Archivo | Estado Técnico |
+|---|---|---|---|
+| Algoritmos comparables con garantías | Funcional | [src/solver.py](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/src/solver.py) | Greedy Opt. $O((V+E)\log V)$ vs. Matching Maximal $O(V+E)$ |
+| Mecanismo de referencia exacto escalable | Funcional | [src/solver.py](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/src/solver.py) | ILP (PuLP) y Branch & Bound podado por cota de matching |
+| Instancia real masiva de Internet | Funcional | [data/instances/real/](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/data/instances/real/) | Stanford SNAP AS-733 (6.4k) y CAIDA BGP (26.4k) |
+| Interfaz Gráfica interactiva con soporte de escala | Funcional | [gui.py](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/gui.py), [src/gui_app.py](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/src/gui_app.py) | Canvas interactivo con Zoom/Pan, multi-escala y threading |
+| Pruebas automatizadas (unitarias, límite, adversarias) | No Funcional | [tests/](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/tests/) | 38 pruebas automatizadas bajo `pytest` (100% exitosas) |
+| Bitácora de aprendizaje y seguimiento (AG-C06.01) | Proceso | [docs/bitacora.md](file:///c:/Users/PC/Documents/AlgoritmosAvanzados/VertexCover-main/docs/bitacora.md) | 8 sesiones registradas detallando decisiones y aprendizajes |
 
 ---
 
-## 3. Cumplimiento de Indicadores de Desempeño (Rúbrica AG_C06)
+## 3. Resultados Experimentales Cuantitativos
 
-### Indicador AG-C06.01: Aprendizaje Autónomo y Proceso sin Supervisión (40%)
-- **Superación de dependencias de solvers:** Ante la variabilidad de binarios compilados de CBC en Windows, se diseñó e implementó de forma autónoma un solver exacto Branch & Bound en Python puro podado con cotas de matching maximal.
-- **Determinismo canónico en colas de prioridad:** Se diseñó el esquema de tuplas compuestas `(-grado, str(id), id)` en `heapq` para evitar fallos de reproducibilidad por hash aleatorizado entre ejecuciones.
-- **Bitácora de aprendizaje:** 8 sesiones detalladas en `docs/bitacora.md` con objetivos, obstáculos reales, decisiones tomadas y tareas futuras.
-
-### Indicador AG-C06.02: Adaptación y Uso Competente de Tecnologías (40%)
-- **Stack Tecnológico Justificado:** Python 3, Tkinter/ttk para GUI nativa sin dependencias pesadas, PuLP/Branch & Bound para exactitud matemática, pytest para pruebas continuas, Matplotlib y Pandas para visualización de experimentos.
-- **Arquitectura Multihilo:** Desacoplamiento de la lógica computacional del hilo principal de la GUI (`threading.Thread`) con eventos sincronizados vía `root.after()`.
-- **Integración de Datasets Científicos:** Procesamiento directo de archivos en formato de lista de aristas de Stanford SNAP mediante `Graph.from_edge_list()`.
-
-### Indicador AG-C06.03: Pensamiento Crítico y Análisis de Alternativas (20%)
-- **Contraste Teoría vs. Evidencia:** Aunque el Matching Maximal tiene una garantía formal matemática de 2.0x y el Greedy no tiene cota constante en el peor caso patológico, los experimentos demuestran que en redes reales de Internet el Greedy es muy superior (ratio ~1.88x a favor del Greedy). Esto se debe a la estructura *libre de escala* (ley de potencias) de las redes de routers reales, donde los hubs concentran gran cantidad de aristas que el Greedy aprovecha inmediatamente.
-- **Instrumentación Rigurosa:** Medición de tiempo real de CPU con `time.perf_counter()` y memoria RAM con `tracemalloc`.
-
----
-
-## 4. Tabla Comparativa de Resultados Experimentales
-
-### 4.1 Evaluación en Instancias Didácticas y Redes Reales de Internet
+### 3.1 Evaluación sobre Redes Reales y Didácticas
 | Dataset / Instancia | Routers ($|V|$) | Enlaces ($|E|$) | Algoritmo | Routers IDS ($|C|$) | % de Red | Tiempo CPU (ms) | Memoria Pico (KB) | Ratio vs Óptimo | 100% Cubierto |
 |---|---|---|---|---|---|---|---|---|---|
-| **example_small** | 6 | 6 | Greedy Optimizado | 3 | 50.00% | 0.04 ms | 0.5 KB | 1.000x (Óptimo) | ✅ Válido |
+| **example_small.json** | 6 | 6 | Greedy Optimizado | 3 | 50.00% | 0.04 ms | 0.5 KB | 1.000x (Óptimo) | ✅ Válido |
 | | | | Matching Maximal | 4 | 66.67% | 0.01 ms | 0.2 KB | 1.333x | ✅ Válido |
 | | | | Exacto ILP / B&B | 3 | 50.00% | 0.98 ms | 1.2 KB | 1.000x (Óptimo) | ✅ Válido |
 | | | | Fuerza Bruta | 3 | 50.00% | 0.03 ms | 0.4 KB | 1.000x (Óptimo) | ✅ Válido |
-| **network_backbone_18** | 18 | 32 | Greedy Optimizado | 7 | 38.89% | 0.10 ms | 2.1 KB | 1.000x (Óptimo) | ✅ Válido |
+| **network_backbone_18.json** | 18 | 32 | Greedy Optimizado | 7 | 38.89% | 0.10 ms | 2.1 KB | 1.000x (Óptimo) | ✅ Válido |
 | | | | Matching Maximal | 14 | 77.78% | 0.17 ms | 1.4 KB | 2.000x | ✅ Válido |
 | | | | Exacto ILP / B&B | 7 | 38.89% | 37.12 ms | 8.5 KB | 1.000x (Óptimo) | ✅ Válido |
 | | | | Fuerza Bruta | 7 | 38.89% | 174.10 ms | 5.2 KB | 1.000x (Óptimo) | ✅ Válido |
@@ -83,21 +64,21 @@ Dado un grafo no dirigido $G = (V, E)$ que modela una red de comunicaciones:
 
 ---
 
-## 5. Manual de Uso y Ejecución Rápida
+## 4. Instrucciones de Ejecución
 
 ```bash
-# 1. Instalar dependencias
+# 1. Instalar dependencias consolidadas
 pip install -r requirements.txt
 
-# 2. Ejecutar la suite completa de pruebas automatizadas (38 pruebas)
+# 2. Ejecutar la suite de 38 pruebas automatizadas
 pytest tests/ -v
 
 # 3. Lanzar la Interfaz Gráfica Interactiva (GUI)
 python gui.py
-# o también:
+# o alternativamente:
 python demo.py --gui
 
-# 4. Correr la batería experimental y regenerar gráficos
+# 4. Ejecutar la batería experimental completa y regenerar gráficos
 python experiments/compare_entrega2.py
 
 # 5. Ejecutar la demo CLI sobre la red real de Stanford SNAP
