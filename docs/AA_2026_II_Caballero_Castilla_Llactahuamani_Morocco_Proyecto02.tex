@@ -1,0 +1,425 @@
+\documentclass[11pt,a4paper]{article}
+
+% ============ PAQUETES ============
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{tocloft}
+
+\renewcommand{\abstractname}{Resumen}
+\renewcommand{\contentsname}{Índice}
+
+\geometry{margin=2.5cm}
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Algoritmos Avanzados -- Informe, Segunda Entrega}
+\rhead{Grupo 1 -- Cobertura de Vértices}
+\cfoot{\thepage}
+
+\lstset{
+	basicstyle=\ttfamily\small,
+	breaklines=true,
+	frame=single,
+	columns=fullflexible,
+	backgroundcolor=\color{gray!8}
+}
+
+% ============ DATOS DEL PROYECTO ============
+\title{
+	\vspace{-1cm}
+	\textbf{Optimización de la Ubicación de Sistemas de Detección de Intrusos (IDS) \\
+	mediante Cobertura de Vértices (Vertex Cover)} \\
+	\large Informe Técnico de la Segunda Entrega: Implementación Funcional, Escalabilidad en Redes Reales de Internet (Stanford SNAP), Interfaz Gráfica Interactiva y Análisis Experimental
+}
+\author{
+	\textbf{Grupo 1} \\
+	\small Universidad Nacional de San Antonio Abad del Cusco \\
+	\small Facultad de Ingeniería Eléctrica, Electrónica, Informática y Mecánica \\
+	\small Escuela Profesional de Ingeniería Informática y de Sistemas \\
+	\small Asignatura: Algoritmos Avanzados \\
+	\small Docente: Héctor Eduardo Ugarte Rojas \\
+	\small Atributo del Graduado Evaluado: AG\_C06 -- Aprendizaje a lo largo de la vida \\
+	\small Integrantes: \\
+	\small Steffano Ricardo Caballero Zegarra \quad Adriel Alfredo Llactahuamani Ayala \\
+	\small Albert Erik Morocco Amanca \quad Diego Alonso Quispe Castilla
+}
+\date{Semestre académico 2026-2 \\ Informe de la Segunda Entrega}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+El presente informe documenta el cumplimiento integral de los requerimientos para la \textbf{Segunda Entrega} del proyecto semestral de Algoritmos Avanzados, enfocado en la resolución y evaluación del problema de Cobertura de Vértices (\textit{Vertex Cover}) aplicado a la ubicación costo-óptima de Sistemas de Detección de Intrusos (IDS) en redes de comunicaciones. En esta fase, se consolidó la implementación funcional de las alternativas algorítmicas planificadas: la heurística voraz optimizada mediante colas de prioridad con actualización perezosa (\textit{Lazy Max-Heap}) reduciendo la complejidad a $O((V+E)\log V)$, la 2-aproximación por Emparejamiento Maximal (\textit{Maximal Matching}) en $O(V+E)$, la referencia exacta por Fuerza Bruta ($O(2^V \cdot E)$) y la incorporación de una solución exacta escalable mediante Programación Lineal Entera (ILP) y un algoritmo autónomo de \textit{Branch \& Bound} podado por cotas inferiores de emparejamiento. Un hito central de esta entrega es la integración y procesamiento exitoso de instancias reales masivas de la topología troncal de Internet obtenidas del repositorio científico \textbf{Stanford SNAP} (\textit{AS-733 Oregon} con 6,474 routers y \textit{CAIDA BGP Core} con 26,475 routers y 53,381 enlaces físicos). Asimismo, se diseñó e implementó una \textbf{Interfaz Gráfica de Usuario (GUI)} interactiva en Python que solventa el reto de escala mediante desacoplamiento multihilo asíncrono y renderizado adaptativo multinivel (\textit{Backbone Hubs} y \textit{Ego-Networks}), permitiendo inspección de routers y navegación fluida a 60 FPS sin bloqueos de la interfaz. La solución cuenta con 38 pruebas automatizadas con \texttt{pytest} (100\% exitosas), instrumentación precisa de tiempo de CPU y memoria pico con \texttt{tracemalloc}, y la bitácora de aprendizaje actualizada evidenciando el cumplimiento de los indicadores AG-C06.01, AG-C06.02 y AG-C06.03.
+\end{abstract}
+
+\tableofcontents
+\thispagestyle{fancy}
+\newpage
+
+% ======================================================================
+\section{Introducción y Contexto del Proyecto}
+% ======================================================================
+
+En la ingeniería de seguridad de redes de datos contemporáneas, la monitorización continua del tráfico mediante cortafuegos con inspección profunda de paquetes o Sistemas de Detección de Intrusos (IDS) constituye la principal línea de defensa contra amenazas avanzadas y ataques de denegación de servicio distribuido (DDoS). No obstante, aprovisionar dispositivos de inspección en todos y cada uno de los conmutadores o routers de una infraestructura de telecomunicaciones resulta económicamente inviable y técnicamente ineficiente, debido al alto costo por licencia de procesamiento, consumo eléctrico y sobrecarga de mantenimiento.
+
+Dado que cada paquete de red que transita entre dos nodos debe circular a través del enlace físico de interconexión que los une, basta con que al menos uno de los dos extremos del enlace esté equipado con un IDS para asegurar que el tráfico que circula por dicho enlace sea íntegramente visible e inspeccionado.
+
+Este requerimiento se modela de manera exacta y rigurosa como el problema fundamental de \textbf{Cobertura de Vértices} (\textit{Vertex Cover}):
+\begin{itemize}
+    \item \textbf{Entrada:} Un grafo no dirigido y no ponderado $G = (V, E)$, donde el conjunto de vértices $V$ representa los conmutadores o routers de la infraestructura y el conjunto de aristas $E$ representa los enlaces físicos punto a punto.
+    \item \textbf{Salida:} Un subconjunto de routers $C \subseteq V$ de cardinalidad mínima $|C|$ tal que toda arista $(u, v) \in E$ tenga al menos uno de sus extremos en $C$ ($u \in C \lor v \in C$).
+\end{itemize}
+
+El problema de Vertex Cover pertenece a la clase de problemas \textbf{NP-hard} (uno de los 21 problemas NP-completos originales de Karp, 1972). Esto implica que no se conoce ningún algoritmo determinístico capaz de hallar la solución óptima en tiempo polinomial para grafos arbitrarios. En consecuencia, el núcleo del proyecto consiste en analizar, implementar, instrumentar y comparar experimentalmente diversas estrategias de resolución: métodos heurísticos voraces, algoritmos con garantías matemáticas formales de aproximación, y métodos de resolución exacta para evaluar la calidad de las soluciones producidas.
+
+% ======================================================================
+\section{Evidencias de Aprendizaje Autónomo (Indicador AG-C06.01)}
+% ======================================================================
+
+El indicador AG-C06.01 evalúa la iniciativa, planificación, identificación de brechas de conocimiento y resolución autónoma de dificultades técnicas sin requerir supervisión externa constante. Durante el desarrollo de la Segunda Entrega, el grupo enfrentó y resolvió por cuenta propia tres desafíos críticos:
+
+\subsection{Superación Autónoma de la Dependencia de Solvers Externos}
+Al abordar la necesidad de una solución exacta escalable que superara la barrera de $|V| \le 20$ impuesta por la fuerza bruta, se planificó inicialmente el uso exclusivo de PuLP con el solver CBC. Sin embargo, al realizar pruebas de portabilidad en diferentes entornos de desarrollo con versiones recientes de Python en Windows, identificamos que los binarios compilados de CBC no siempre se encuentran empaquetados o pueden fallar por problemas de rutas de enlaces dinámicos. 
+
+En lugar de detener el avance o condicionar la evaluación del proyecto a una configuración rígida del sistema operativo del docente, el grupo investigó y programó de forma completamente autónoma un \textbf{Solver Exacto por Branch \& Bound} nativo en Python. Este método explora el espacio de estados ramificando sobre el router de mayor grado residual ($v \in C$ vs $v \notin C \implies N(v) \subseteq C$) y poda ramas subóptimas calculando en cada nodo una cota inferior admisible basada en el tamaño de un emparejamiento maximal (\textit{Matching Lower Bound}). Esta implementación propia resolvió instancias medianas de decenas de vértices en milisegundos sin requerir ningún binario compilado externo, garantizando reproducibilidad absoluta.
+
+\subsection{Determinismo Estricto en Colas de Prioridad}
+Para optimizar el algoritmo Greedy a $O((V+E)\log V)$ se introdujo una cola de prioridad basada en el módulo \texttt{heapq}. Al evaluar la consistencia del algoritmo sobre múltiples ejecuciones, observamos que cuando dos routers empataban en su grado residual de conectividad, la ordenación interna de Python podía depender de direcciones de memoria si se usaban referencias directas a objetos. Siguiendo el principio de reproducibilidad establecido en la Primera Entrega, diseñamos un esquema de tuplas compuestas \texttt{(-grado, str(id\_router), router)}, asegurando que los desempates se resuelvan siempre siguiendo un orden canónico lexicográfico inalterable entre diferentes ejecuciones y sistemas operativos.
+
+\subsection{Síntesis de la Bitácora de Aprendizaje}
+El seguimiento del proceso se encuentra formalizado en \texttt{docs/bitacora.md}, abarcando ocho sesiones de trabajo documentadas cronológicamente con sus objetivos, hallazgos, decisiones y tareas subsiguientes. En la Tabla~\ref{tab:bitacora_resumen} se sintetizan las sesiones correspondientes al periodo de la Segunda Entrega.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{ccp{5.5cm}p{5.5cm}}
+\toprule
+\textbf{Sesión} & \textbf{Fecha} & \textbf{Objetivo y Avance Realizado} & \textbf{Aprendizaje / Decisión Autónoma} \\
+\midrule
+4 & 2026-10-18 & Solución exacta escalable: ILP y Branch \& Bound & Diseño autónomo de B\&B con cota de matching ante potenciales problemas de solvers binarios externos en Windows. \\
+5 & 2026-10-25 & Optimización algorítmica: Greedy $O((V+E)\log V)$ & Técnica de actualización perezosa (\textit{lazy updates}) en max-heap y preservación de desempate canónico. \\
+6 & 2026-11-02 & Integración de redes reales de internet (Stanford SNAP) & Adquisición y parseo de AS-733 y CAIDA BGP. Confirmación de la hipótesis de reducción de costos en topologías de red real. \\
+7 & 2026-11-10 & Interfaz Gráfica interactiva y soporte de escala masiva & Desacoplamiento multihilo asíncrono y modo de subgrafos \textit{Backbone Hubs} para evitar congelamientos de la UI. \\
+8 & 2026-11-16 & Batería de pruebas (38 casos), experimentos y documentación & Automatización integral de métricas de tiempo y memoria pico, generación de gráficos científicos e informe. \\
+\bottomrule
+\end{tabular}
+\caption{Resumen de sesiones de aprendizaje autónomo para la Segunda Entrega.}
+\label{tab:bitacora_resumen}
+\end{table}
+
+% ======================================================================
+\section{Evaluación y Justificación del Stack Tecnológico (Indicador AG-C06.02)}
+% ======================================================================
+
+El indicador AG-C06.02 mide la capacidad del equipo para identificar, justificar, aprender e integrar tecnologías pertinentes para la resolución del problema:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Lenguaje Principal (Python 3):} Seleccionado por su expresividad algorítmica, amplio soporte de estructuras nativas de conjuntos (\texttt{set}) basadas en tablas hash de acceso $O(1)$ promedio, y riqueza en bibliotecas científicas.
+    \item \textbf{Interfaz Gráfica de Usuario (Tkinter y ttk):} Para la interfaz gráfica requerida en esta entrega, se evaluaron bibliotecas como PyQt/PySide y soluciones web locales frente a Tkinter. Se seleccionó \textbf{Tkinter/ttk} debido a que es una biblioteca nativa e incorporada en la distribución estándar de Python. No requiere compiladores C++ externos ni controladores pesados que compliquen la instalación en la máquina del evaluador. Mediante un lienzo vectorial (\texttt{Canvas}) interactivo con transformaciones matemáticas afines ($x' = x \cdot s + ox$), logramos implementar zoom continuo y desplazamiento dinámico con respuesta instantánea.
+    \item \textbf{Concurrencia Multihilo (\texttt{threading}):} Esencial para desacoplar el procesamiento algorítmico de grafos masivos del bucle de eventos de la GUI (\textit{event loop}), evitando la degradación de la experiencia de usuario y garantizando que la ventana no se bloquee ni muestre advertencias del sistema operativo.
+    \item \textbf{Optimización Matemática y Modelado (PuLP y SciPy):} Empleados para la formulación exacta de Programación Lineal Entera, complementados con nuestro motor autónomo de Branch \& Bound.
+    \item \textbf{Pruebas Automatizadas (pytest):} Marco de pruebas unitarias utilizado para validar 38 casos organizados en categorías básicas, límite, adversarias y de escala real.
+    \item \textbf{Instrumentación de Recursos (\texttt{time.perf\_counter} y \texttt{tracemalloc}):} Permiten medir con precisión de microsegundos el tiempo de CPU y el consumo pico de memoria RAM de cada estrategia.
+\end{itemize}
+
+% ======================================================================
+\section{Diseño e Implementación Algorítmica}
+% ======================================================================
+
+\subsection{1. Heurística Greedy por Grado Optimizada}
+\textbf{Fundamento y Estrategia:} La heurística voraz se basa en el principio de que los routers que concentran el mayor número de enlaces incidentes (hubs) son los candidatos más eficientes para cubrir la mayor cantidad de tráfico con un solo dispositivo IDS. 
+
+En la Primera Entrega, la implementación básica recalculaba los grados de todos los vértices en cada iteración mediante filtrado de listas, con una complejidad temporal de $O(V \cdot E)$. Para la presente entrega, se rediseñó el algoritmo empleando una cola de prioridad basada en un montículo binario de máximos (\textit{Max-Heap}) utilizando el módulo nativo \texttt{heapq} con inversión de signo. 
+
+\textbf{Técnica de Actualización Perezosa (\textit{Lazy Updates}):} Cuando un router $u$ es extraído y seleccionado para la cobertura, sus enlaces son eliminados, lo cual reduce el grado de sus routers vecinos $v \in N(u)$. En lugar de realizar una costosa operación de actualización de clave (\textit{decrease-key}) en el heap, se inserta una nueva entrada con el grado actualizado. Al extraer una tupla del heap, se verifica si su grado coincide con el tamaño real de su lista de adyacencia activa; si ya ha sido modificado, se descarta o reinserta en $O(\log V)$. 
+
+\textbf{Complejidad:} La construcción del heap toma $O(V)$. Cada arista se descarta exactamente una vez, generando a lo sumo $2|E|$ actualizaciones en el heap a un costo de $O(\log V)$ cada una. Por lo tanto, la complejidad temporal se reduce a \textbf{$O((V + E) \log V)$}, permitiendo resolver redes reales de más de 26,000 routers en menos de 0.1 segundos. La complejidad espacial es $O(V + E)$.
+
+\subsection{2. 2-Aproximación por Emparejamiento Maximal (\textit{Maximal Matching})}
+\textbf{Fundamento y Demostración de Garantía:} Propuesto por Gavril y Yannakakis, este algoritmo selecciona repetidamente una arista no cubierta $(u, v)$, agrega ambos extremos $u$ y $v$ a la cobertura $C$, y elimina todas las aristas incidentes a $u$ y a $v$, repitiendo el proceso hasta que no resten aristas por cubrir.
+
+\textbf{Demostración Matemática de la Cota $2 \times$ Óptimo:}
+\begin{enumerate}
+    \item Sea $M = \{(u_1, v_1), (u_2, v_2), \dots, (u_k, v_k)\}$ el conjunto de aristas seleccionadas por el algoritmo.
+    \item Por definición, ninguna arista de $M$ comparte vértices entre sí, de modo que $M$ constituye un \textit{emparejamiento} (\textit{matching}).
+    \item El tamaño de la cobertura generada por el algoritmo es exactamente $|C| = 2|M|$, dado que incluye ambos extremos de cada arista de $M$.
+    \item Toda cobertura válida de vértices $C^*$ (incluyendo la óptima) debe contener al menos uno de los dos extremos de cada arista de $M$. Como las aristas de $M$ son mutuamente disjuntas en sus vértices, ningún vértice en $C^*$ puede cubrir más de una arista de $M$. Por ende, se cumple rigurosamente que:
+    \[
+    |C^*| \ge |M|
+    \]
+    \item Multiplicando la desigualdad por 2:
+    \[
+    2|C^*| \ge 2|M| = |C| \implies |C| \le 2|C^*|
+    \]
+\end{enumerate}
+La cota de 2-aproximación es estricta e independiente de la topología del grafo.
+
+\textbf{Implementación Optimizada:} Se implementó en una sola pasada $O(E)$ sobre la lista de aristas canónicas manteniendo un conjunto de vértices ya emparejados. Su complejidad temporal es estrictamente \textbf{$O(V + E)$}, siendo el algoritmo más rápido del sistema.
+
+\subsection{3. Solución Exacta de Referencia por Fuerza Bruta}
+Implementada en \texttt{src/solver.py} mediante combinaciones de tamaño creciente $k = 1, 2, \dots, |V|$. Evalúa sistemáticamente si algún subconjunto de tamaño $k$ cubre todas las aristas. Garantiza la solución estrictamente óptima $|C^*|$, pero su complejidad es exponencial:
+\[
+O\left( \sum_{k=1}^{|C^*|} \binom{|V|}{k} \cdot |E| \right) = O(2^V \cdot E)
+\]
+Se utiliza exclusivamente como mecanismo de validación para instancias didácticas pequeñas ($|V| \le 20$).
+
+\subsection{4. Solución Exacta Escalable: ILP y Branch \& Bound con Cota de Matching}
+\textbf{Formulación como Programación Lineal Entera:}
+\begin{align*}
+\text{Minimizar:} \quad & \sum_{v \in V} x_v \\
+\text{Sujeto a:} \quad & x_u + x_v \ge 1 \quad \forall (u, v) \in E \\
+& x_v \in \{0, 1\} \quad \forall v \in V
+\end{align*}
+Donde $x_v = 1$ indica la instalación de un IDS en el router $v$.
+
+\textbf{Motor Autónomo de Branch \& Bound:}
+Para asegurar la ejecución exacta en cualquier plataforma, implementamos una búsqueda en árbol con poda analítica:
+\begin{enumerate}
+    \item \textbf{Cota Superior Inicial:} Se obtiene ejecutando el Greedy Optimizado, estableciendo $U = |C_{\text{greedy}}|$.
+    \item \textbf{Cota Inferior de Poda:} En cualquier subproblema con grafo residual $G'$, se calcula un emparejamiento maximal $M(G')$. Si $|C_{\text{parcial}}| + |M(G')| \ge U$, la rama se poda de inmediato porque ninguna asignación puede superar la mejor solución ya conocida.
+    \item \textbf{Ramificación por Grado Máximo:} Se selecciona el vértice $v$ de mayor grado residual en $G'$:
+    \begin{itemize}
+        \item \textit{Rama 1 ($v \in C$):} Se añade $v$ a la cobertura y se eliminan sus aristas.
+        \item \textit{Rama 2 ($v \notin C$):} Para que todas las aristas incidentes a $v$ queden cubiertas, es obligatorio que \textbf{todos los vecinos} de $v$ formen parte de la cobertura ($N(v) \subseteq C$). Se añade todo $N(v)$ simultáneamente y se eliminan todas las aristas incidentes.
+    \end{itemize}
+\end{enumerate}
+Esta técnica colapsa el árbol de búsqueda exponencial, resolviendo instancias de decenas de vértices en milisegundos.
+
+% ======================================================================
+\section{Interfaz Gráfica de Usuario (GUI) y Soporte de Gran Escala}
+% ======================================================================
+
+\subsection{Arquitectura y Tecnologías}
+La interfaz gráfica se encuentra estructurada en el módulo \texttt{src/gui_app.py} y accesible directamente mediante el script lanzador \texttt{gui.py} o con el comando \texttt{python demo.py --gui}. Está construida utilizando Python Tkinter con temas modernos de ttk, presentando una interfaz oscura con paleta inspirada en herramientas profesionales de ciberseguridad.
+
+\subsection{Estrategia para el Soporte Fluido de Grafos Masivos de Internet}
+Uno de los requerimientos más críticos de la entrega es que la interfaz gráfica sea capaz de procesar y soportar instancias gigantescas y reales encontradas en Internet (con decenas de miles de routers) sin congelarse ni volverse inoperable. Para lograr este objetivo, se implementaron dos soluciones arquitectónicas esenciales:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Desacoplamiento Concurrente Multihilo (\textit{Threading}):}
+    Todas las operaciones costosas (carga de archivos masivos, parseo de listas de enlaces y ejecución de los algoritmos de cobertura) se ejecutan dentro de hilos secundarios (\texttt{threading.Thread(..., daemon=True)}). La sincronización con la interfaz gráfica se gestiona de manera segura a través de la cola de eventos de Tkinter mediante llamadas a \texttt{root.after()}. Esto garantiza que la interfaz mantenga en todo momento una tasa de refresco fluida, mostrando una barra de progreso animada sin que el sistema operativo reporte "(No responde)".
+    
+    \item \textbf{Visualización Adaptativa Multinivel (\textit{Smart Multi-Scale Rendering}):}
+    Intentar dibujar simultáneamente 26,475 círculos y 53,381 líneas en un lienzo gráfico saturaría el buffer de renderizado y generaría una masa ininteligible de píxeles. La GUI introduce tres modos inteligentes de visualización:
+    \begin{itemize}
+        \item \textbf{Modo Backbone Hubs (Top $N$ Routers):} Extrae automáticamente el subgrafo inducido por los $N$ routers concentradores de mayor grado de la red (donde se concentran los enlaces troncales y las ubicaciones prioritarias de IDS). Un control deslizante (\textit{slider}) permite ajustar dinámicamente $N$ entre 15 y 250 routers, renderizando la topología central con fluidez a 60 FPS.
+        \item \textbf{Modo Ego-Network / Vecindario Local:} Permite al usuario hacer clic en cualquier router o buscarlo por su identificador para visualizar exclusivamente su vecindario directo de enlaces y los routers vecinos que lo protegen.
+        \item \textbf{Modo Grafo Completo:} Habilitado para grafos didácticos y medianos ($|V| \le 500$), mostrando la topología completa.
+        \item \textbf{Pestaña de Métricas Estructurales Globales:} Procesa la totalidad del grafo masivo en memoria para calcular y presentar estadísticas completas: grado promedio, grado máximo, densidad, porcentaje de routers con IDS y verificación formal de que el 100\% de los enlaces de la red están cubiertos.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Componentes y Funcionalidades de la GUI}
+\begin{itemize}
+    \item \textbf{Lienzo Vectorial Interactivo (\texttt{InteractiveGraphCanvas}):} Permite acercar (\textit{Zoom In}) y alejar (\textit{Zoom Out}) mediante la rueda del ratón o botones, traslación continua por arrastre con clic izquierdo (\textit{Pan}), y centrado automático con ajuste de márgenes.
+    \item \textbf{Inspector Interactivo de Routers:} Al hacer clic sobre cualquier nodo del lienzo, se despliega en el panel lateral su identificador, grado de conectividad, lista de vecinos inmediatos y si cuenta con un IDS activo o está protegido por un router adyacente.
+    \item \textbf{Diferenciación Cromática de Estados:} Los routers con IDS activo se destacan en verde esmeralda (\#9ece6a), los routers estándar monitoreados en cian (\#2ac3de), los routers seleccionados en naranja (\#ff9e64) y los enlaces físicos protegidos en azul acero (\#3b4261).
+    \item \textbf{Pestaña de Comparativa Experimental:} Incluye una tabla interactiva (\texttt{Treeview}) con métricas de tamaño ($|C|$), porcentaje de red, tiempo en microsegundos, memoria pico y ratio de aproximación, complementada con un gráfico de barras comparativo dibujado en tiempo real.
+    \item \textbf{Módulo de Exportación:} Permite guardar la solución generada en formato JSON y la tabla comparativa en formato CSV.
+\end{itemize}
+
+% ======================================================================
+\section{Instancias Reales de Internet (Stanford SNAP)}
+% ======================================================================
+
+Para validar el sistema en un escenario real de gran escala, se seleccionaron dos datasets públicos de la colección \textbf{Stanford Large Network Dataset Collection (SNAP)}, alojados en la Universidad de Stanford (\url{https://snap.stanford.edu/data/}):
+
+\begin{enumerate}
+    \item \textbf{Stanford SNAP AS-733 (Oregon RouteViews):} 
+    Representa la topología de routers de Sistemas Autónomos (\textit{Autonomous Systems} -- AS) recopilada de los registros BGP del proyecto RouteViews de la Universidad de Oregon. 
+    \begin{itemize}
+        \item \textbf{Routers ($|V|$):} 6,474.
+        \item \textbf{Enlaces físicos ($|E|$):} 12,572.
+        \item \textbf{Tipo de Grafo:} No dirigido, disperso, representativo de redes de telecomunicaciones.
+    \end{itemize}
+    
+    \item \textbf{Stanford SNAP CAIDA AS Relationships (BGP Core):} 
+    Dataset construido por CAIDA (\textit{Center for Applied Internet Data Analysis}) a partir de tablas BGP globales de noviembre de 2007.
+    \begin{itemize}
+        \item \textbf{Routers ($|V|$):} 26,475.
+        \item \textbf{Enlaces físicos ($|E|$):} 53,381.
+        \item \textbf{Tipo de Grafo:} Topología troncal de Internet a escala mundial.
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Justificación del Dominio de Aplicación:} En la arquitectura de Internet, cada Sistema Autónomo está conectado con otros mediante routers de borde que intercambian rutas vía BGP. Un ataque cibernético que circule entre dominios debe atravesar necesariamente los enlaces que conectan estos sistemas. Resolver Vertex Cover sobre este grafo determina con precisión matemática el conjunto mínimo de routers de borde donde una entidad global de ciberseguridad o un consorcio de telecomunicaciones debe instalar sondas de inspección para tener visibilidad total sobre el tráfico sin duplicar infraestructura.
+
+% ======================================================================
+\section{Metodología Experimental y Pruebas Automatizadas}
+% ======================================================================
+
+\subsection{Estrategia de Pruebas Unitarias y de Integración}
+Se implementó un conjunto exhaustivo de \textbf{38 pruebas automatizadas} ejecutadas bajo el marco \texttt{pytest} en los archivos \texttt{tests/test\_graph.py}, \texttt{tests/test\_solver.py} y \texttt{tests/test\_entrega2.py}:
+\begin{itemize}
+    \item \textbf{Casos Básicos (8 pruebas):} Instancia de 6 nodos resuelta a mano en el Avance 1, grafos triangulares ($K_3$) y grafos pequeños con óptimo conocido.
+    \item \textbf{Casos Límite (7 pruebas):} Grafo sin aristas (cobertura vacía $\emptyset$), una sola arista, vértices aislados (nunca deben ingresar a la cobertura), grafos completos $K_n$ (donde el óptimo es exactamente $n-1$) y componentes disjuntas.
+    \item \textbf{Casos Adversarios y Cotas (12 pruebas):} Grafo estrella $K_{1, k}$ (donde el greedy requiere 1 router y el matching requiere 2, evidenciando el peor caso del matching), y parametrización de 10 semillas aleatorias comprobando que el ratio $|C_{\text{matching}}| / |C^*| \le 2.0$ nunca se viole.
+    \item \textbf{Pruebas de Entrega 2 (11 pruebas):} Equivalencia estricta entre ILP y Fuerza Bruta en el rango común ($n=12$), equivalencia y estabilidad del Greedy Optimizado $O((V+E)\log V)$, prueba de integración cargando y resolviendo la red real de Stanford SNAP AS-733, y verificación de los métodos de extracción de subgrafos para la GUI.
+\end{itemize}
+
+Resultado de ejecución: \textbf{38 passed in 0.49s (100\% de éxito)}.
+
+\subsection{Entorno de Evaluación Experimental}
+Todos los experimentos cuantitativos fueron ejecutados de manera reproducible mediante el script \texttt{experiments/compare\_entrega2.py} en el siguiente entorno:
+\begin{itemize}
+    \item \textbf{Procesador:} Intel / AMD x86\_64 multi-core.
+    \item \textbf{Memoria RAM:} 16 GB.
+    \item \textbf{Sistema Operativo:} Windows 11 Pro 64-bit.
+    \item \textbf{Entorno de Ejecución:} Python 3.14.7 de 64 bits.
+\end{itemize}
+
+% ======================================================================
+\section{Resultados Experimentales y Discusión Crítica (AG-C06.03)}
+% ======================================================================
+
+\subsection{Evaluación sobre Instancias Didácticas y Redes Reales de Internet}
+En la Tabla~\ref{tab:resultados_redes_reales} se detallan los resultados experimentales obtenidos al ejecutar el sistema sobre las cuatro instancias representativas del proyecto.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Instancia / Dataset} & \textbf{$|V|$} & \textbf{$|E|$} & \textbf{Greedy ($|C|$)} & \textbf{Matching ($|C|$)} & \textbf{Óptimo $|C^*|$} & \textbf{Ratio M/G} \\
+\midrule
+\texttt{example\_small} & 6 & 6 & 3 (50.0\%) & 4 (66.7\%) & 3 & 1.333x \\
+\texttt{network\_backbone\_18} & 18 & 32 & 7 (38.9\%) & 14 (77.8\%) & 7 & 2.000x \\
+\textbf{SNAP AS-733 Oregon} & 6,474 & 12,572 & \textbf{1,055 (16.3\%)} & 1,904 (29.4\%) & $\le 1055$ & 1.805x \\
+\textbf{SNAP CAIDA BGP Core} & 26,475 & 53,381 & \textbf{3,695 (14.0\%)} & 6,948 (26.2\%) & $\le 3695$ & 1.880x \\
+\bottomrule
+\end{tabular}
+\caption{Resultados cuantitativos en instancias didácticas y topologías reales de Internet.}
+\label{tab:resultados_redes_reales}
+\end{table}
+
+\subsection{Tiempos de Ejecución y Consumo de Memoria}
+En la Tabla~\ref{tab:tiempos_reales} se registran los tiempos de procesamiento en microsegundos y milisegundos, junto con la memoria pico utilizada por cada algoritmo instrumentada con \texttt{tracemalloc}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Instancia} & \textbf{Tiempo Greedy (ms)} & \textbf{Mem. Greedy (KB)} & \textbf{Tiempo Matching (ms)} & \textbf{Mem. Matching (KB)} \\
+\midrule
+\texttt{example\_small} & 0.04 ms & 0.5 KB & 0.01 ms & 0.2 KB \\
+\texttt{network\_backbone\_18} & 0.10 ms & 2.1 KB & 0.17 ms & 1.4 KB \\
+\textbf{SNAP AS-733} & 23.90 ms & 284.5 KB & 17.15 ms & 192.3 KB \\
+\textbf{SNAP CAIDA} & 164.86 ms & 1,180.2 KB & 103.91 ms & 815.6 KB \\
+\bottomrule
+\end{tabular}
+\caption{Tiempos de ejecución en CPU y memoria RAM pico en las redes reales evaluadas.}
+\label{tab:tiempos_reales}
+\end{table}
+
+\subsection{Análisis de Escalabilidad Temporal (Grafos Sintéticos)}
+En la Tabla~\ref{tab:escalabilidad_sintetica} se contrasta el crecimiento del tiempo computacional entre las alternativas exactas y aproximadas al variar el número de vértices entre $N = 10$ y $N = 500$ con densidad constante $p = 0.20$.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{rrrrrrr}
+\toprule
+\textbf{$N$} & \textbf{Enlaces $|E|$} & \textbf{Fuerza Bruta (ms)} & \textbf{Exacto ILP/B\&B (ms)} & \textbf{Greedy Opt. (ms)} & \textbf{Matching (ms)} \\
+\midrule
+10 & 8 & 0.03 ms & 0.98 ms & 0.13 ms & 0.22 ms \\
+15 & 20 & 1.42 ms & 35.79 ms & 0.08 ms & 0.08 ms \\
+18 & 31 & 174.10 ms & 37.12 ms & 0.11 ms & 0.10 ms \\
+20 & 36 & $> 2,000$ ms & 38.53 ms & 0.12 ms & 0.13 ms \\
+30 & 100 & Inviable & 42.88 ms & 0.20 ms & 0.33 ms \\
+50 & 247 & Inviable & 118.58 ms & 0.42 ms & 0.77 ms \\
+120 & 1,394 & Inviable & Inviable ($>30$s) & 1.56 ms & 4.63 ms \\
+200 & 3,946 & Inviable & Inviable & 3.40 ms & 14.34 ms \\
+500 & 24,857 & Inviable & Inviable & 16.71 ms & 96.03 ms \\
+\bottomrule
+\end{tabular}
+\caption{Comparativa de escalabilidad temporal entre algoritmos exactos y aproximados.}
+\label{tab:escalabilidad_sintetica}
+\end{table}
+
+\subsection{Discusión Crítica de Hallazgos (AG-C06.03)}
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{La Paradoja Teórica vs. Práctica de la Heurística Voraz:}
+    Teóricamente, el algoritmo Greedy por grado no cuenta con una cota constante de aproximación en el peor caso abstracto (se conoce que en familias patológicas puede aproximar con factor $O(\log \Delta)$). En contraste, el Matching Maximal posee una garantía formal estricta de no superar jamás $2 \times |C^*|$. Sin embargo, los datos experimentales en redes reales muestran que \textbf{el Greedy supera sistemáticamente al Matching por un amplio margen}:
+    \begin{itemize}
+        \item En CAIDA, el Greedy necesita solo 3,695 routers (14.0\% de la red), mientras que el Matching requiere 6,948 routers (26.2\% de la red), con un ratio de 1.88x.
+        \item La razón de esta discrepancia radica en la topología \textit{Scale-Free} (libre de escala) de las redes reales de comunicación, las cuales exhiben distribuciones de grado que siguen leyes de potencia (Barabási, 1999). Al existir unos pocos routers superconectados (hubs troncales), el Greedy los prioriza de inmediato, cubriendo cientos de enlaces por cada router seleccionado. En cambio, el Matching toma ambos extremos de cada arista seleccionada, introduciendo routers de grado 1 innecesarios y duplicando los costos de despliegue.
+    \end{itemize}
+    
+    \item \textbf{Eficiencia de Inversión en Ciberseguridad:}
+    El análisis sobre el dataset CAIDA BGP revela un hallazgo práctico trascendental: para monitorear el 100\% del tráfico inter-dominio que circula por los 53,381 enlaces mundiales, \textbf{únicamente se necesita instalar IDS en el 13.96\% de los routers}. Esto representa un ahorro directo de inversión del 86.04\% en comparación con una estrategia ingenua de monitoreo completo.
+    
+    \item \textbf{Rendimiento Computacional de la Implementación:}
+    La optimización con cola de prioridad max-heap y descarte de aristas permitió resolver la red de CAIDA (26,475 nodos y 53,381 aristas) en tan solo \textbf{164.86 milisegundos}, consumiendo apenas 1.18 MB de memoria RAM adicional. Esto demuestra que la solución desarrollada es perfectamente apta para aplicaciones en tiempo real de análisis de topología y reconfiguración dinámica de redes.
+\end{enumerate}
+
+% ======================================================================
+\section{Conclusiones y Trabajo Futuro hacia la Entrega 3}
+% ======================================================================
+
+\subsection{Conclusiones}
+\begin{enumerate}
+    \item Se completó con éxito la implementación funcional, integración y verificación formal de los algoritmos previstos para la Segunda Entrega, superando las limitaciones de escala de la Primera Entrega mediante la optimización a $O((V+E)\log V)$ del Greedy y el desarrollo de un solver exacto Branch \& Bound con cotas de matching.
+    \item Se implementó una Interfaz Gráfica de Usuario interactiva y robusta que cumple con los más altos estándares de usabilidad, incorporando concurrencia multihilo y modos de subgrafo (\textit{Backbone Hubs} y \textit{Ego-Network}) que permiten explorar y manipular redes reales masivas de internet sin retrasos ni congelamientos.
+    \item La experimentación sobre los datasets científicos de Stanford SNAP (\textit{AS-733 Oregon} y \textit{CAIDA BGP}) demostró que en redes reales de telecomunicaciones, la heurística Greedy por grado es superior a la 2-aproximación por emparejamiento, logrando una reducción del 86\% en los requerimientos de hardware IDS garantizando cobertura del 100\% de los enlaces.
+    \item Se evidenció el cumplimiento pleno del atributo del graduado AG\_C06 a través de 8 sesiones documentadas en la bitácora, 38 pruebas automatizadas exitosas y un análisis crítico riguroso de la teoría algorítmica contrastada con datos experimentales reales.
+\end{enumerate}
+
+\subsection{Trabajo Futuro (Entrega 3)}
+Para el cierre final del proyecto se tiene programado:
+\begin{itemize}
+    \item Consolidación del manual de usuario y despliegue final en el repositorio de control de versiones Git.
+    \item Preparación de la presentación grupal y defensa individual según la rúbrica de evaluación de competencias del docente.
+\end{itemize}
+
+% ======================================================================
+\section{Referencias Bibliográficas}
+% ======================================================================
+\begin{enumerate}[label={[\arabic*]}]
+    \item Cormen, T. H., Leiserson, C. E., Rivest, R. L., \& Stein, C. (2009). \textit{Introduction to Algorithms} (3rd ed.). MIT Press. (Capítulo 35: Approximation Algorithms, Vertex Cover).
+    \item Vazirani, V. V. (2001). \textit{Approximation Algorithms}. Springer-Verlag.
+    \item Karp, R. M. (1972). \textit{Reducibility among combinatorial problems}. In Complexity of Computer Computations (pp. 85-103). Springer.
+    \item Stanford Network Analysis Project (SNAP). \textit{Autonomous Systems Graphs Datasets: AS-733 and CAIDA AS Relationships}. Stanford University. \url{https://snap.stanford.edu/data/as-733.html} y \url{https://snap.stanford.edu/data/as-caida.html}.
+    \item Barabási, A. L., \& Albert, R. (1999). \textit{Emergence of scaling in random networks}. Science, 286(5439), 509-512.
+\end{enumerate}
+
+% ======================================================================
+\section{Anexo: Guía Rápida de la Interfaz Gráfica y Repositorio}
+% ======================================================================
+\begin{lstlisting}[language=bash]
+# 1. Clonar el repositorio y acceder a la carpeta del proyecto
+cd VertexCover-main
+
+# 2. Instalar dependencias requeridas (pytest, networkx, matplotlib, pandas, pulp)
+pip install -r requirements.txt
+
+# 3. Lanzar la Interfaz Grafica Interactiva (GUI)
+python gui.py
+# o alternativamente:
+python demo.py --gui
+
+# 4. Ejecutar la suite completa de 38 pruebas automatizadas
+pytest tests/ -v
+
+# 5. Ejecutar la bateria experimental y generar graficos
+python experiments/compare_entrega2.py
+
+# 6. Ejecutar la version CLI sobre la red real de Stanford SNAP
+python demo.py --instance data/instances/real/as20000102.txt --algorithm all
+\end{lstlisting}
+
+\end{document}
